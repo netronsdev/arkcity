@@ -40,6 +40,11 @@ GRADE_NAMES = {0: "일반", 1: "고급", 2: "희귀", 3: "영웅", 4: "전설"}
 SYNTHESIS_SUCCESS_RATE = [0.18, 0.18, 0.11, 0.11]  # 일반→고급, 고급→희귀, 희귀→영웅, 영웅→전설
 PITY_THRESHOLD = 20
 
+# ── 강화 확률 ──
+ENHANCE_SAFE_MAX = 6      # +0~+6: 100% (안전 강화)
+ENHANCE_RATE = 0.30       # +7 이상: 30%
+ENHANCE_DESTROY_MIN = 7   # +7 이상 실패 시 장비 파괴
+
 # ── 확률표 해시 (변조 검증용) ──
 def compute_rate_table_hash() -> str:
     """확률표의 SHA-256 해시를 계산합니다.
@@ -48,7 +53,8 @@ def compute_rate_table_hash() -> str:
     for grade, rate in RATE_TABLE:
         canonical += f"({grade},{rate});"
     canonical += f"SYNTHESIS={','.join(str(r) for r in SYNTHESIS_SUCCESS_RATE)};"
-    canonical += f"PITY={PITY_THRESHOLD}"
+    canonical += f"PITY={PITY_THRESHOLD};"
+    canonical += f"ENHANCE_SAFE_MAX={ENHANCE_SAFE_MAX};ENHANCE_RATE={ENHANCE_RATE};ENHANCE_DESTROY_MIN={ENHANCE_DESTROY_MIN}"
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 RATE_TABLE_HASH = compute_rate_table_hash()

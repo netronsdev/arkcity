@@ -26,6 +26,7 @@ from gacha_engine import (
     commit, reveal, map_to_grade, map_to_character,
     RATE_TABLE, RATE_TABLE_VERSION, RATE_TABLE_HASH,
     GRADE_NAMES, CHAR_COUNT, SYNTHESIS_SUCCESS_RATE, PITY_THRESHOLD,
+    ENHANCE_SAFE_MAX, ENHANCE_RATE, ENHANCE_DESTROY_MIN,
 )
 
 
@@ -91,6 +92,10 @@ def show_rate_info():
     for name, rate in zip(synth_names, SYNTHESIS_SUCCESS_RATE):
         print(f"    {name:12s}  {rate*100:5.1f}%")
     print(f"    천장:        {PITY_THRESHOLD}회 실패 시 천장 수령 가능")
+    print()
+    print("  [강화 확률]")
+    print(f"    +0 ~ +{ENHANCE_SAFE_MAX}:   100.0% (안전 강화, 실패 없음)")
+    print(f"    +{ENHANCE_DESTROY_MIN} 이상:    {ENHANCE_RATE*100:5.1f}% (실패 시 장비 파괴)")
     print("=" * 50)
     print()
     print("이 해시가 블록체인에 기록된 확률표 해시와 일치하면")
