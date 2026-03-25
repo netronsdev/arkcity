@@ -1,17 +1,25 @@
 """
-ArkCity 뽑기 검증 도구
+ArkCity 검증 도구
 =====================
 대시보드에서 확인한 seed와 nonce를 입력하면
-뽑기 결과를 독립적으로 재현하여 서버 결과와 대조할 수 있습니다.
+뽑기/강화/합성/상자 결과를 독립적으로 재현하여 서버 결과와 대조할 수 있습니다.
 
 사용법:
     python verify.py --seed <시드> --nonce <논스>
     python verify.py --seed-hash <시드해시> --seed <시드>
     python verify.py --rate-hash
+    python verify.py --enhance --seed <시드> --nonce <논스> --success-rate 0.30
+    python verify.py --synthesis --seed <시드> --nonce <논스> --grade 2
 
 예시:
     # 단일 뽑기 검증
     python verify.py --seed abc123...def --nonce user_nonce_here
+
+    # 강화 검증
+    python verify.py --enhance --seed abc123 --nonce my_nonce --success-rate 0.30
+
+    # 합성 검증
+    python verify.py --synthesis --seed abc123 --nonce my_nonce --grade 2
 
     # 시드 해시 검증 (서버가 커밋한 해시와 실제 시드가 일치하는지)
     python verify.py --seed-hash e5f6...abc --seed abc123...def
@@ -23,7 +31,7 @@ ArkCity 뽑기 검증 도구
 import argparse
 import sys
 from gacha_engine import (
-    commit, reveal, map_to_grade, map_to_character,
+    commit, reveal, reveal_float, map_to_grade, map_to_character,
     RATE_TABLE, RATE_TABLE_VERSION, RATE_TABLE_HASH,
     GRADE_NAMES, CHAR_COUNT, SYNTHESIS_SUCCESS_RATE, PITY_THRESHOLD,
     ENHANCE_SAFE_MAX, ENHANCE_RATE, ENHANCE_DESTROY_MIN,
@@ -51,6 +59,53 @@ def verify_pull(seed: str, nonce: str):
     print()
     print("대시보드의 결과와 위 값이 일치하면 → 공정한 뽑기입니다.")
     print("불일치하면 → 서버가 다른 로직을 적용했다는 증거입니다.")
+
+
+def verify_enhance(seed: str, nonce: str, success_rate: float):
+    """강화 결과를 재현합니다."""
+    roll = reveal_float(seed, nonce)
+    success = roll < success_rate
+
+    print("=" * 50)
+    print("  ArkCity 강화 결과 검증")
+    print("=" * 50)
+    print(f"  시드:       {seed[:32]}...")
+    print(f"  논스:       {nonce}")
+    print(f"  시드 해시:  {commit(seed)[:32]}...")
+    print(f"  롤값:       {roll:.4f}")
+    print(f"  성공률:     {success_rate*100:.1f}%")
+    print("-" * 50)
+    print(f"  결과:       {'성공' if success else '실패'}")
+    print(f"  판정:       {roll:.4f} {'<' if success else '>='} {success_rate}")
+    print("=" * 50)
+    print()
+    print("대시보드의 결과와 위 값이 일치하면 → 공정한 강화입니다.")
+
+
+def verify_synthesis(seed: str, nonce: str, source_grade: int):
+    """합성 결과를 재현합니다."""
+    roll = reveal_float(seed, f"{nonce}:success")
+    rate = SYNTHESIS_SUCCESS_RATE[source_grade]
+    success = roll < rate
+
+    print("=" * 50)
+    print("  ArkCity 합성 결과 검증")
+    print("=" * 50)
+    print(f"  시드:       {seed[:32]}...")
+    print(f"  논스:       {nonce}")
+    print(f"  소스 등급:  {GRADE_NAMES.get(source_grade, source_grade)}")
+    print(f"  성공률:     {rate*100:.1f}%")
+    print(f"  롤값:       {roll:.4f}")
+    print("-" * 50)
+    print(f"  결과:       {'성공' if success else '실패'}")
+
+    if success:
+        char_rv = reveal(seed, f"{nonce}:char")
+        result_char = char_rv % CHAR_COUNT
+        print(f"  캐릭터:     #{result_char}")
+    print("=" * 50)
+    print()
+    print("대시보드의 결과와 위 값이 일치하면 → 공정한 합성입니다.")
 
 
 def verify_seed_hash(seed_hash: str, seed: str):
@@ -103,16 +158,26 @@ def show_rate_info():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ArkCity 뽑기 검증 도구")
+    parser = argparse.ArgumentParser(description="ArkCity 검증 도구")
     parser.add_argument("--seed", type=str, help="서버 시드 (reveal 후 공개된 값)")
     parser.add_argument("--nonce", type=str, help="클라이언트 논스")
     parser.add_argument("--seed-hash", type=str, help="서버가 커밋한 시드 해시")
     parser.add_argument("--rate-hash", action="store_true", help="현재 확률표 해시 출력")
+    parser.add_argument("--enhance", action="store_true", help="강화 검증 모드")
+    parser.add_argument("--synthesis", action="store_true", help="합성 검증 모드")
+    parser.add_argument("--success-rate", type=float, help="강화 성공률 (0.0~1.0)")
+    parser.add_argument("--grade", type=int, help="합성 소스 등급 (0~3)")
 
     args = parser.parse_args()
 
     if args.rate_hash:
         show_rate_info()
+    elif args.enhance and args.seed and args.nonce:
+        rate = args.success_rate or ENHANCE_RATE
+        verify_enhance(args.seed, args.nonce, rate)
+    elif args.synthesis and args.seed and args.nonce:
+        grade = args.grade if args.grade is not None else 0
+        verify_synthesis(args.seed, args.nonce, grade)
     elif args.seed and args.nonce:
         verify_pull(args.seed, args.nonce)
     elif args.seed_hash and args.seed:
@@ -123,6 +188,8 @@ def main():
         print("예시:")
         print("  python verify.py --rate-hash")
         print("  python verify.py --seed abc123 --nonce my_nonce")
+        print("  python verify.py --enhance --seed abc123 --nonce my_nonce --success-rate 0.30")
+        print("  python verify.py --synthesis --seed abc123 --nonce my_nonce --grade 2")
         print("  python verify.py --seed-hash e5f6abc --seed abc123")
         sys.exit(1)
 

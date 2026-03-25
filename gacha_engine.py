@@ -1,16 +1,7 @@
 """
-ArkCity Gacha Engine — Commit-Reveal 뽑기 시스템
-================================================
-이 파일은 아크시티 게임 서버에서 실제로 사용하는 뽑기 엔진의 동일 사본입니다.
-누구나 이 코드를 실행하여 자신의 뽑기 결과가 공정했는지 독립적으로 검증할 수 있습니다.
-
-검증 방법:
-    1. 대시보드(https://netrons.co.kr/game/dashboard)에서 자신의 소환 기록 확인
-    2. seed_hash, nonce, 결과를 확인
-    3. 이 스크립트의 verify.py를 사용하여 결과가 동일한지 검증
-
-확률표 버전: v1.0
-확률표 SHA-256 해시: 아래 RATE_TABLE_HASH 참조
+Commit-Reveal 뽑기 엔진
+- 서버 시드 생성 → 해시 커밋 → 클라이언트 논스 수신 → reveal → 등급/캐릭터 결정
+- 합성 로직 (4→1, 실패 3소모 1반환, 천장 20회)
 """
 
 import hashlib
@@ -24,20 +15,18 @@ RATE_TABLE_VERSION = "v1.0"
 
 # (등급, 확률) — 합산 1.0
 RATE_TABLE = [
-    (0, 0.92869),  # 일반 (92.869%)
-    (1, 0.06633),  # 고급 (6.633%)
-    (2, 0.00474),  # 희귀 (0.474%)
-    (3, 0.00024),  # 영웅 (0.024%)
-    # 전설(4) = 합성 전용, 뽑기 불가
+    (0, 0.92869),  # N  일반
+    (1, 0.06633),  # R  고급
+    (2, 0.00474),  # SR 희귀
+    (3, 0.00024),  # SSR 영웅
+    # UR(4) = 합성 전용, 뽑기 불가
 ]
 
 CHAR_COUNT = 20
-GRADE_COUNT = 5  # 일반=0, 고급=1, 희귀=2, 영웅=3, 전설=4
-
-GRADE_NAMES = {0: "일반", 1: "고급", 2: "희귀", 3: "영웅", 4: "전설"}
+GRADE_COUNT = 5  # N=0 R=1 SR=2 SSR=3 UR=4
 
 # ── 합성 설정 ──
-SYNTHESIS_SUCCESS_RATE = [0.18, 0.18, 0.11, 0.11]  # 일반→고급, 고급→희귀, 희귀→영웅, 영웅→전설
+SYNTHESIS_SUCCESS_RATE = [0.18, 0.18, 0.11, 0.11]  # N→R, R→SR, SR→SSR, SSR→UR
 PITY_THRESHOLD = 20
 
 # ── 강화 확률 ──
@@ -47,8 +36,7 @@ ENHANCE_DESTROY_MIN = 7   # +7 이상 실패 시 장비 파괴
 
 # ── 확률표 해시 (변조 검증용) ──
 def compute_rate_table_hash() -> str:
-    """확률표의 SHA-256 해시를 계산합니다.
-    이 해시가 블록체인에 기록된 값과 일치하면 확률표가 변조되지 않은 것입니다."""
+    """확률표의 SHA-256 해시를 계산 — 블록체인 앵커링 + GitHub 공개용"""
     canonical = f"RATE_TABLE_VERSION={RATE_TABLE_VERSION};"
     for grade, rate in RATE_TABLE:
         canonical += f"({grade},{rate});"
@@ -79,6 +67,18 @@ def reveal(seed: str, nonce: str) -> int:
     combined = f"{seed}:{nonce}"
     hash_hex = hashlib.sha256(combined.encode()).hexdigest()
     return int(hash_hex[:8], 16)
+
+
+def reveal_float(seed: str, nonce: str) -> float:
+    """reveal → [0.0, 1.0) 정규화 float (강화/합성/상자 확률 판정용)"""
+    rv = reveal(seed, nonce)
+    return (rv % 10000) / 10000.0
+
+
+def reveal_randint(seed: str, nonce: str, a: int, b: int) -> int:
+    """reveal → [a, b] 범위 정수 (상자 보상 수량 등)"""
+    rv = reveal(seed, nonce)
+    return a + (rv % (b - a + 1))
 
 
 # ══════════════════════════════════════════
@@ -142,3 +142,10 @@ def synthesis_roll(grade: int, pity_count: int = 0) -> bool:
     rv = int(secrets.token_hex(4), 16)
     normalized = (rv % 10000) / 10000.0
     return normalized < SYNTHESIS_SUCCESS_RATE[grade]
+
+
+# ══════════════════════════════════════════
+#  등급 이름 (검증 도구용)
+# ══════════════════════════════════════════
+
+GRADE_NAMES = {0: "일반", 1: "고급", 2: "희귀", 3: "영웅", 4: "전설"}
