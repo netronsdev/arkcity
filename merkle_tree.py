@@ -3,6 +3,7 @@ Merkle Tree — 6종 ledger 통합 무결성 검증 + 배치 집계 앵커링
 - ether_ledger, item_ledger, gacha_transactions, synthesis_log, chest_open_log, boss_kill_log
 - 트랜잭션 해시 → 바이너리 트리 → 루트 해시 → Polygon 앵커링
 - 배치마다 소스별 집계 + 총 유통량 등식을 summary leaf로 포함
+- v5: server_id별 서브루트 + 거래소 에테르 분류(이전/수수료)
 """
 
 import hashlib
@@ -13,13 +14,13 @@ logger = logging.getLogger("game_server")
 
 # 통합 Merkle 배치 대상 테이블 + SELECT 컬럼
 LEDGER_TABLES = {
-    "ether_ledger": "id, account_id, delta, balance_after, reason, created_at",
-    "item_ledger": "id, account_id, item_uid, def_id, delta, reason, created_at",
-    "gacha_transactions": "id, seed, nonce, result_grade, result_char_index",
-    "synthesis_log": "id, account_id, source_grade, target_grade, success, seed, seed_hash, created_at",
-    "chest_open_log": "id, account_id, chest_grade, got_rare_item, got_hero_item, got_synchro_chip, dungeon_id, stage, boss_kill_id, seed, seed_hash, created_at",
-    "boss_kill_log": "id, dungeon_id, stage, boss_type, spawn_time, death_time, total_damage, participant_count, boss_max_hp, is_weekly, created_at",
-    "enhance_log": "id, account_id, item_uid, before_level, after_level, success, destroyed, seed, seed_hash, created_at",
+    "ether_ledger": "id, account_id, delta, balance_after, reason, created_at, server_id",
+    "item_ledger": "id, account_id, item_uid, def_id, delta, reason, created_at, server_id",
+    "gacha_transactions": "id, seed, nonce, result_grade, result_char_index, server_id",
+    "synthesis_log": "id, account_id, source_grade, target_grade, success, seed, seed_hash, created_at, server_id",
+    "chest_open_log": "id, account_id, chest_grade, got_rare_item, got_hero_item, got_synchro_chip, dungeon_id, stage, boss_kill_id, seed, seed_hash, created_at, server_id",
+    "boss_kill_log": "id, dungeon_id, stage, boss_type, spawn_time, death_time, total_damage, participant_count, boss_max_hp, is_weekly, created_at, server_id",
+    "enhance_log": "id, account_id, item_uid, before_level, after_level, success, destroyed, seed, seed_hash, created_at, server_id",
 }
 
 
@@ -45,38 +46,39 @@ def build_merkle_root(tx_hashes: list) -> str:
 
 
 def format_ledger_data(table: str, row: dict) -> str:
-    """범용 ledger 데이터를 정규화된 문자열로 변환"""
+    """범용 ledger 데이터를 정규화된 문자열로 변환 (v2: server_id 포함)"""
+    sid = row.get('server_id', 1)
     if table == "ether_ledger":
-        return f"ether|{row['id']}|{row['account_id']}|{row['delta']}|{row['balance_after']}|{row['reason']}|{row['created_at']}"
+        return f"ether|{sid}|{row['id']}|{row['account_id']}|{row['delta']}|{row['balance_after']}|{row['reason']}|{row['created_at']}"
     elif table == "item_ledger":
-        return f"item|{row['id']}|{row['account_id']}|{row['item_uid']}|{row['def_id']}|{row['delta']}|{row['reason']}|{row['created_at']}"
+        return f"item|{sid}|{row['id']}|{row['account_id']}|{row['item_uid']}|{row['def_id']}|{row['delta']}|{row['reason']}|{row['created_at']}"
     elif table == "gacha_transactions":
-        return f"gacha|{row['id']}|{row.get('seed','')}|{row.get('nonce','')}|{row['result_grade']}|{row['result_char_index']}"
+        return f"gacha|{sid}|{row['id']}|{row.get('seed','')}|{row.get('nonce','')}|{row['result_grade']}|{row['result_char_index']}"
     elif table == "synthesis_log":
-        return (f"synth|{row['id']}|{row['account_id']}|{row['source_grade']}|{row['target_grade']}"
+        return (f"synth|{sid}|{row['id']}|{row['account_id']}|{row['source_grade']}|{row['target_grade']}"
                 f"|{row['success']}|{row.get('seed','') or ''}|{row.get('seed_hash','') or ''}"
                 f"|{row['created_at']}")
     elif table == "chest_open_log":
-        return (f"chest|{row['id']}|{row['account_id']}|{row['chest_grade']}"
+        return (f"chest|{sid}|{row['id']}|{row['account_id']}|{row['chest_grade']}"
                 f"|{row.get('got_rare_item',False)}|{row.get('got_hero_item',False)}"
                 f"|{row.get('got_synchro_chip',False)}"
                 f"|{row.get('dungeon_id',0)}|{row.get('stage',0)}|{row.get('boss_kill_id',0)}"
                 f"|{row.get('seed','') or ''}|{row.get('seed_hash','') or ''}"
                 f"|{row['created_at']}")
     elif table == "boss_kill_log":
-        return (f"bosskill|{row['id']}|{row['dungeon_id']}|{row['stage']}"
+        return (f"bosskill|{sid}|{row['id']}|{row['dungeon_id']}|{row['stage']}"
                 f"|{row['boss_type']}|{row['spawn_time']}|{row['death_time']}"
                 f"|{row['total_damage']}|{row['participant_count']}"
                 f"|{row['boss_max_hp']}|{row.get('is_weekly',False)}"
                 f"|{row['created_at']}")
     elif table == "enhance_log":
-        return (f"enhance|{row['id']}|{row['account_id']}|{row['item_uid']}"
+        return (f"enhance|{sid}|{row['id']}|{row['account_id']}|{row['item_uid']}"
                 f"|{row['before_level']}|{row['after_level']}"
                 f"|{row['success']}|{row['destroyed']}"
                 f"|{row.get('seed','') or ''}|{row.get('seed_hash','') or ''}"
                 f"|{row['created_at']}")
     else:
-        return f"{table}|{row.get('id','')}|{row.get('account_id','')}"
+        return f"{table}|{sid}|{row.get('id','')}|{row.get('account_id','')}"
 
 
 def compute_batch_summary(cur, new_sources: dict) -> dict:
@@ -94,7 +96,8 @@ def compute_batch_summary(cur, new_sources: dict) -> dict:
         "supply": {"player_balances": 0, "marketplace_escrow": 0, "total": 0},
     }
 
-    # ── 에테르 소스별 집계 ──
+    # ── 에테르 소스별 집계 (거래소 이전분은 transfer로 분리) ──
+    _TRANSFER_REASONS = ("marketplace_buy", "marketplace_sell", "marketplace_buy_cross", "marketplace_sell_cross")
     if "ether_ledger" in new_sources:
         fid, lid = new_sources["ether_ledger"]
         cur.execute("""
@@ -106,6 +109,13 @@ def compute_batch_summary(cur, new_sources: dict) -> dict:
         """, (fid, lid))
         for r in cur.fetchall():
             g, d = int(r["gen"]), int(r["dest"])
+            if r["reason"] in _TRANSFER_REASONS:
+                # 거래소 이전분은 생성/소멸에 포함하지 않음
+                if g > 0:
+                    summary["ether"].setdefault("transfer", {})[r["reason"]] = g
+                if d > 0:
+                    summary["ether"].setdefault("transfer", {})[r["reason"] + "_out"] = d
+                continue
             if g > 0:
                 summary["ether"]["generated"][r["reason"]] = g
             if d > 0:
@@ -204,13 +214,21 @@ def compute_batch_summary(cur, new_sources: dict) -> dict:
             FROM boss_kill_log WHERE id BETWEEN %s AND %s
             GROUP BY boss_type, dungeon_id, stage
         """, (fid, lid))
-        type_kr = {"normal": "일반", "elite": "엘리트", "weekly": "주간"}
+        boss_name_kr = {
+            "Reina": "레이나", "Iris": "아이리스", "Luna": "루나", "Noah": "노아",
+            "Seraphine": "세라핀", "Kaia": "카이아", "Yuki": "유키", "Mei": "메이",
+            "Vika": "비카", "Nyx": "닉스", "Freya": "프레야", "Zephyra": "제피라",
+            "Sable": "세이블", "Astrid": "아스트리드", "Lilith": "릴리스",
+            "Hana": "하나", "Roxy": "록시", "Aria": "아리아", "Sola": "솔라", "Echo": "에코",
+            "AbyssEndBoss": "심연의 지배자",
+            "normal": "일반", "elite": "엘리트", "weekly": "주간",
+        }
         by_type = {}
         total_count = 0
         for r in cur.fetchall():
             cnt = int(r["cnt"])
             total_count += cnt
-            bt = type_kr.get(r["boss_type"], r["boss_type"])
+            bt = boss_name_kr.get(r["boss_type"], r["boss_type"])
             label = f"던전{r['dungeon_id']} {r['stage']}층 {bt}"
             by_type[label] = {"count": cnt, "totalDamage": int(r["dmg"]),
                               "participants": int(r["participants"])}
@@ -252,21 +270,30 @@ def build_unified_batch(cur, conn) -> bool:
             # 레거시 gacha-only 배치 → gacha 워터마크만 설정
             watermarks["gacha_transactions"] = row["last_tx_id"]
 
-    # 각 테이블에서 신규 행 수집
+    # 각 테이블에서 신규 행 수집 + 서버별 해시 추적
     all_hashes = []
     new_sources = {}
+    server_hash_map = {}  # {server_id: [hash, ...]} — 서버별 서브루트용
     for table, columns in LEDGER_TABLES.items():
         last_id = watermarks.get(table, 0)
         cur.execute(f"SELECT {columns} FROM {table} WHERE id > %s ORDER BY id", (last_id,))
         rows = cur.fetchall()
         if rows:
             for r in rows:
-                h = hash_tx(format_ledger_data(table, dict(r)))
+                rd = dict(r)
+                sid = rd.get("server_id", 1)
+                h = hash_tx(format_ledger_data(table, rd))
                 all_hashes.append(h)
+                server_hash_map.setdefault(sid, []).append(h)
             new_sources[table] = [rows[0]["id"], rows[-1]["id"]]
 
     if not all_hashes:
         return False
+
+    # ── 서버별 서브루트 계산 ──
+    sub_roots = {}
+    for sid in sorted(server_hash_map.keys()):
+        sub_roots[str(sid)] = build_merkle_root(server_hash_map[sid])
 
     # ── 배치 집계 계산 + summary leaf 추가 ──
     summary = compute_batch_summary(cur, new_sources)
@@ -282,14 +309,15 @@ def build_unified_batch(cur, conn) -> bool:
     last_tx_id = gacha_range[1] if gacha_range else None
 
     cur.execute(
-        """INSERT INTO merkle_batches (root_hash, tx_count, first_tx_id, last_tx_id, sources, summary)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
+        """INSERT INTO merkle_batches (root_hash, tx_count, first_tx_id, last_tx_id, sources, summary, sub_roots)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (root, len(all_hashes), first_tx_id, last_tx_id,
-         json.dumps(new_sources), summary_json)
+         json.dumps(new_sources), summary_json, json.dumps(sub_roots))
     )
     conn.commit()
 
     table_summary = ", ".join(f"{t}:{s[1]-s[0]+1}" for t, s in new_sources.items())
     supply = summary["supply"]["total"]
-    logger.info(f"[Merkle] 통합 배치 생성: {len(all_hashes)}건 ({table_summary}), 총유통량={supply:,}")
+    sr_info = ", ".join(f"s{k}={v[:8]}..." for k, v in sub_roots.items())
+    logger.info(f"[Merkle] 통합 배치 생성: {len(all_hashes)}건 ({table_summary}), 총유통량={supply:,}, 서브루트=[{sr_info}]")
     return True
