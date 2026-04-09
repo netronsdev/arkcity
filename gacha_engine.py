@@ -15,24 +15,27 @@ RATE_TABLE_VERSION = "v1.0"
 
 # (등급, 확률) — 합산 1.0
 RATE_TABLE = [
-    (0, 0.92869),  # N  일반
-    (1, 0.06633),  # R  고급
-    (2, 0.00474),  # SR 희귀
-    (3, 0.00024),  # SSR 영웅
-    # UR(4) = 합성 전용, 뽑기 불가
+    (0, 0.92869),  # 일반
+    (1, 0.06633),  # 고급
+    (2, 0.00474),  # 희귀
+    (3, 0.00024),  # 영웅
+    # 전설(4) = 합성 전용, 뽑기 불가
 ]
 
 CHAR_COUNT = 20
-GRADE_COUNT = 5  # N=0 R=1 SR=2 SSR=3 UR=4
+GRADE_COUNT = 5  # 일반=0 고급=1 희귀=2 영웅=3 전설=4
 
 # ── 합성 설정 ──
-SYNTHESIS_SUCCESS_RATE = [0.18, 0.18, 0.11, 0.11]  # N→R, R→SR, SR→SSR, SSR→UR
+SYNTHESIS_SUCCESS_RATE = [0.18, 0.18, 0.11, 0.11]  # 일반→고급, 고급→희귀, 희귀→영웅, 영웅→전설
 PITY_THRESHOLD = 20
 
 # ── 강화 확률 ──
 ENHANCE_SAFE_MAX = 6      # +0~+6: 100% (안전 강화)
 ENHANCE_RATE = 0.30       # +7 이상: 30%
 ENHANCE_DESTROY_MIN = 7   # +7 이상 실패 시 장비 파괴
+
+# ── 등급 이름 ──
+GRADE_NAMES = {0: "일반", 1: "고급", 2: "희귀", 3: "영웅", 4: "전설"}
 
 # ── 확률표 해시 (변조 검증용) ──
 def compute_rate_table_hash() -> str:
@@ -72,7 +75,7 @@ def reveal(seed: str, nonce: str) -> int:
 def reveal_float(seed: str, nonce: str) -> float:
     """reveal → [0.0, 1.0) 정규화 float (강화/합성/상자 확률 판정용)"""
     rv = reveal(seed, nonce)
-    return (rv % 10000) / 10000.0
+    return (rv % 1000000) / 1000000.0
 
 
 def reveal_randint(seed: str, nonce: str, a: int, b: int) -> int:
@@ -87,7 +90,7 @@ def reveal_randint(seed: str, nonce: str, a: int, b: int) -> int:
 
 def map_to_grade(random_value: int) -> int:
     """난수 → 등급 매핑 (RATE_TABLE 기준)"""
-    normalized = (random_value % 10000) / 10000.0  # 0.0000 ~ 0.9999
+    normalized = (random_value % 1000000) / 1000000.0  # 0.000000 ~ 0.999999
     cumulative = 0.0
     for grade, rate in RATE_TABLE:
         cumulative += rate
@@ -140,12 +143,5 @@ def synthesis_roll(grade: int, pity_count: int = 0) -> bool:
         return False
     # 순수 랜덤 판정 (천장 강제 성공 제거 — ClaimPity로만 천장 수령)
     rv = int(secrets.token_hex(4), 16)
-    normalized = (rv % 10000) / 10000.0
+    normalized = (rv % 1000000) / 1000000.0
     return normalized < SYNTHESIS_SUCCESS_RATE[grade]
-
-
-# ══════════════════════════════════════════
-#  등급 이름 (검증 도구용)
-# ══════════════════════════════════════════
-
-GRADE_NAMES = {0: "일반", 1: "고급", 2: "희귀", 3: "영웅", 4: "전설"}
