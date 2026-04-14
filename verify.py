@@ -196,3 +196,32 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# --- JACKPOT EXCHANGE ADDON (auto-injected, idempotent) ---
+try:
+    from exp_exchange_engine import (
+        compute_exchange_rate_table_hash,
+        JACKPOT_RATE_TABLE,
+        JACKPOT_RATE_TABLE_VERSION,
+    )
+    _HAS_EXCHANGE = True
+except Exception:
+    _HAS_EXCHANGE = False
+
+
+def _jackpot_exchange_rate_hash_main():
+    if not _HAS_EXCHANGE:
+        print("exp_exchange_engine.py 가 레포에 없습니다.")
+        return 1
+    print(f"JACKPOT_RATE_TABLE_VERSION = {JACKPOT_RATE_TABLE_VERSION}")
+    for mul, prob in JACKPOT_RATE_TABLE:
+        print(f"  x{mul:<4} {prob*100:.2f}%")
+    print(f"SHA-256: {compute_exchange_rate_table_hash()}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    if "--exchange-rate-hash" in _sys.argv:
+        _sys.exit(_jackpot_exchange_rate_hash_main())
+# --- END JACKPOT EXCHANGE ADDON ---
